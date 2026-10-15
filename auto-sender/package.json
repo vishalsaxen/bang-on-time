@@ -1,0 +1,18 @@
+{
+  "name": "bang-on-time-auto-sender",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sends each Excel row's WhatsApp message (with image) automatically at its scheduled date and time.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dry-run": "node server.js --dry-run"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "multer": "2.0.2",
+    "qrcode": "1.5.4",
+    "whatsapp-web.js": "1.34.7",
+    "xlsx": "0.18.5"
+  }
+}

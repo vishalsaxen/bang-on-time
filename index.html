@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bang On Time</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #667085;
+    --line: #e3e6ec; --accent: #128c7e; --accent-ink: #ffffff;
+    --warn: #b54708; --ok: #067647; --due: #fff4d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e8eaf0; --muted: #98a2b3;
+      --line: #2c3340; --accent: #25d366; --accent-ink: #0b1a12;
+      --warn: #fdb022; --ok: #47cd89; --due: #3a3110;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  .step { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+          color: var(--accent-ink); text-align: center; font-size: 13px; line-height: 22px; margin-right: 6px; }
+  input[type=file] { width: 100%; }
+  input[type=text], select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--bg); color: var(--text); font: inherit; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  #imgPreview { margin-top: 10px; max-width: 100%; max-height: 160px; border-radius: 8px; display: none; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer;
+           background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .warn { color: var(--warn); }
+  .table-wrap { overflow-x: auto; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  td.msg { min-width: 220px; }
+  tr.due { background: var(--due); }
+  .status { font-size: 13px; white-space: nowrap; }
+  .status.sent { color: var(--ok); }
+  .status.due { color: var(--warn); font-weight: 600; }
+  .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .row-btns button { padding: 6px 10px; font-size: 13px; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .cal-head b { font-size: 15px; }
+  .cal-head button { padding: 4px 10px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-grid .dow { font-size: 11px; color: var(--muted); padding: 2px 0; }
+  .cal-grid button { padding: 7px 0; font-weight: 500; background: transparent; color: var(--text);
+          border: 1px solid transparent; }
+  .cal-grid button:hover:not(:disabled) { border-color: var(--line); }
+  .cal-grid button.today { border-color: var(--accent); }
+  .cal-grid button.sel { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+  input[type=time] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--bg); color: var(--text); font: inherit; font-size: 14px; }
+  .when { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
+  .status.past, .status.invalid { color: var(--warn); }
+  #clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bang On Time</h1>
+  <p class="sub">Upload an image and your Excel list, then each message goes to its number at its time. Now: <span id="clock"></span></p>
+
+  <div class="grid">
+    <section class="card">
+      <h2><span class="step">1</span>Image</h2>
+      <input type="file" id="imgFile" accept="image/*">
+      <img id="imgPreview" alt="Selected image">
+      <p class="note">Sent along with every message.</p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2</span>Excel list</h2>
+      <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
+      <p class="note">Columns: A Name, B Mobile, C Message, D Time, E Sender's mobile.</p>
+      <p class="note warn" id="xlsError"></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3</span>Settings</h2>
+      <label for="sender">Sending from (column E)</label>
+      <input type="text" id="sender" readonly placeholder="Filled from the Excel">
+      <label for="cc">Country code for numbers without one</label>
+      <input type="text" id="cc" value="91">
+      <label for="channel">Send using</label>
+      <select id="channel">
+        <option value="wa">WhatsApp (text + image)</option>
+        <option value="sms">SMS (text only, phone)</option>
+      </select>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">4</span>Send date</h2>
+      <div id="cal" class="cal"></div>
+      <p class="note">Picked: <b id="pickedDate"></b>. Each message goes on this date at the exact time in its row (from column D; you can change it in the table).</p>
+    </section>
+  </div>
+
+  <div class="actions">
+    <button id="startBtn" disabled>Start schedule</button>
+    <button id="stopBtn" class="ghost" disabled>Stop</button>
+    <span class="note" id="runNote">Load an Excel file to begin.</span>
+  </div>
+  <p class="note">Keep this tab open. When a row is due you'll hear a beep and get a notification; tap <b>Send</b> on that row. On WhatsApp the image is copied to your clipboard, so paste it (Ctrl+V or long-press) into the chat that opens. Make sure WhatsApp on this device is logged in as the sender number.</p>
+
+  <div class="table-wrap">
+    <table id="tbl" hidden>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Message</th><th>Send at</th><th>Status</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let rows = [];          // {name, mobile, message, time:{h,m,s}, sender, at:Date|null, state}
+  let imageFile = null;
+  let timer = null;
+
+  // ---------- clock ----------
+  const fmt = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  setInterval(() => { $('clock').textContent = fmt(new Date()); }, 1000);
+  $('clock').textContent = fmt(new Date());
+
+  // ---------- image ----------
+  $('imgFile').addEventListener('change', (e) => {
+    imageFile = e.target.files[0] || null;
+    const img = $('imgPreview');
+    if (imageFile) { img.src = URL.createObjectURL(imageFile); img.style.display = 'block'; }
+    else { img.style.display = 'none'; }
+  });
+
+  // ---------- excel ----------
+  $('xlsFile').addEventListener('change', async (e) => {
+    $('xlsError').textContent = '';
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      rows = data.slice(1)
+        .filter(r => String(r[1]).trim() !== '')
+        .map(r => ({
+          name: String(r[0]).trim(),
+          mobile: String(r[1]).replace(/\D/g, ''),
+          message: String(r[2]),
+          time: parseTime(r[3]),
+          sender: String(r[4]).replace(/\D/g, ''),
+          at: null, state: 'loaded'
+        }));
+      if (!rows.length) throw new Error('No rows with a mobile number in column B.');
+      const senders = [...new Set(rows.map(r => r.sender).filter(Boolean))];
+      $('sender').value = senders.join(', ') || '(column E is empty)';
+      $('xlsError').textContent = senders.length > 1 ? 'Column E has more than one sender number; one device can only send from one.' : '';
+      stop();
+      render();
+      $('startBtn').disabled = false;
+      $('runNote').textContent = rows.length + ' messages loaded.';
+    } catch (err) {
+      $('xlsError').textContent = 'Could not read that file: ' + err.message;
+    }
+  });
+
+  // Accepts an Excel time fraction (0.5 = 12:00), a full date serial, "14:30", "2:30 PM", or a Date.
+  function parseTime(v) {
+    if (v instanceof Date) return { h: v.getHours(), m: v.getMinutes(), s: v.getSeconds() };
+    if (typeof v === 'number') {
+      const secs = Math.round((v % 1) * 86400);
+      return { h: Math.floor(secs / 3600) % 24, m: Math.floor(secs / 60) % 60, s: secs % 60 };
+    }
+    const m = String(v).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?$/i);
+    if (!m) return null;
+    let h = +m[1];
+    if (m[4]) { const pm = /p/i.test(m[4]); if (h === 12) h = 0; if (pm) h += 12; }
+    return { h, m: +m[2], s: +(m[3] || 0) };
+  }
+  const pad = (n) => String(n).padStart(2, '0');
+  const timeValue = (t) => t ? pad(t.h) + ':' + pad(t.m) + ':' + pad(t.s) : '';
+
+  // ---------- calendar ----------
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  let sendDate = startOfDay(new Date());
+  let calMonth = new Date(sendDate.getFullYear(), sendDate.getMonth(), 1);
+  function drawCalendar() {
+    const today = startOfDay(new Date());
+    const first = calMonth.getDay();
+    const days = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+    const prevOk = calMonth > new Date(today.getFullYear(), today.getMonth(), 1);
+    let html = `<div class="cal-head">
+        <button class="ghost" data-nav="-1" ${prevOk ? '' : 'disabled'} aria-label="Previous month">&lsaquo;</button>
+        <b>${calMonth.toLocaleDateString([], { month: 'long', year: 'numeric' })}</b>
+        <button class="ghost" data-nav="1" aria-label="Next month">&rsaquo;</button></div><div class="cal-grid">`;
+    html += ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => `<div class="dow">${d}</div>`).join('');
+    html += '<div></div>'.repeat(first);
+    for (let d = 1; d <= days; d++) {
+      const day = new Date(calMonth.getFullYear(), calMonth.getMonth(), d);
+      const cls = [+day === +today ? 'today' : '', +day === +sendDate ? 'sel' : ''].join(' ');
+      html += `<button class="${cls}" data-day="${d}" ${day < today ? 'disabled' : ''}>${d}</button>`;
+    }
+    $('cal').innerHTML = html + '</div>';
+    $('pickedDate').textContent = sendDate.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  $('cal').addEventListener('click', (e) => {
+    const nav = e.target.closest('[data-nav]'), day = e.target.closest('[data-day]');
+    if (nav) calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + +nav.dataset.nav, 1);
+    if (day) { sendDate = new Date(calMonth.getFullYear(), calMonth.getMonth(), +day.dataset.day); reschedule(); }
+    drawCalendar();
+  });
+  drawCalendar();
+
+  // The exact moment a row should go: picked calendar date + the row's time.
+  function sendAt(r) {
+    if (!r.time) return null;
+    const at = new Date(sendDate); at.setHours(r.time.h, r.time.m, r.time.s, 0);
+    return at;
+  }
+
+  const intl = (num) => num.length === 10 ? $('cc').value.replace(/\D/g, '') + num : num;
+
+  // ---------- scheduling ----------
+  $('startBtn').addEventListener('click', () => {
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    unlockAudio();
+    running = true;
+    rows.forEach(r => { if (r.state !== 'sent') r.state = 'loaded'; });
+    reschedule();
+    $('startBtn').disabled = true; $('stopBtn').disabled = false;
+    $('runNote').textContent = 'Running. Keep this tab open.';
+    tick();
+    timer = setInterval(tick, 1000);
+  });
+  $('stopBtn').addEventListener('click', stop);
+
+  // (Re)computes each unsent row's send moment; called on start and whenever the date or a time changes.
+  let running = false;
+  function reschedule() {
+    const now = new Date();
+    rows.forEach(r => {
+      if (r.state === 'sent' || r.state === 'due') return;
+      r.at = sendAt(r);
+      if (!r.at) r.state = 'invalid';
+      else if (!running) r.state = 'loaded';
+      else r.state = r.at > now ? 'waiting' : 'past';
+    });
+    render();
+  }
+
+  function stop() {
+    clearInterval(timer); timer = null; running = false;
+    rows.forEach(r => { if (r.state !== 'sent') r.state = 'loaded'; });
+    $('startBtn').disabled = !rows.length; $('stopBtn').disabled = true;
+    if (rows.length) $('runNote').textContent = 'Stopped.';
+    render();
+  }
+
+  function tick() {
+    const now = new Date();
+    let changed = false;
+    rows.forEach((r, i) => {
+      if (r.state === 'waiting' && r.at <= now) {
+        r.state = 'due'; changed = true;
+        alertDue(r, i);
+      }
+    });
+    if (rows.every(r => r.state === 'sent' || r.state === 'invalid') && timer) {
+      clearInterval(timer); timer = null; running = false;
+      $('stopBtn').disabled = true; $('startBtn').disabled = false;
+      $('runNote').textContent = 'All done.';
+    }
+    if (changed) render(); else updateStatuses();
+  }
+
+  let audioCtx = null;
+  function unlockAudio() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch (_) {} }
+  function beep() {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+    o.start(); o.stop(audioCtx.currentTime + 0.6);
+  }
+  function alertDue(r, i) {
+    beep();
+    document.title = '⏰ Send to ' + (r.name || r.mobile);
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification('Time to send to ' + (r.name || r.mobile), { body: r.message });
+      n.onclick = () => { window.focus(); send(i); n.close(); };
+    }
+  }
+
+  // ---------- sending ----------
+  async function send(i) {
+    const r = rows[i];
+    const to = intl(r.mobile);
+    if ($('channel').value === 'sms') {
+      location.href = 'sms:+' + to + '?body=' + encodeURIComponent(r.message);
+    } else {
+      const copied = await copyImage();
+      window.open('https://wa.me/' + to + '?text=' + encodeURIComponent(r.message), '_blank');
+      if (imageFile && !copied) alert('Could not copy the image automatically. Attach it in WhatsApp manually.');
+    }
+    r.state = 'sent'; r.sentAt = new Date();
+    document.title = 'Bang On Time';
+    render();
+  }
+
+  // Copies the uploaded image as PNG so it can be pasted into the WhatsApp chat.
+  async function copyImage() {
+    if (!imageFile || !navigator.clipboard || !window.ClipboardItem) return false;
+    try {
+      const bmp = await createImageBitmap(imageFile);
+      const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+      c.getContext('2d').drawImage(bmp, 0, 0);
+      const png = await new Promise(res => c.toBlob(res, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+      return true;
+    } catch (_) { return false; }
+  }
+
+  // ---------- table ----------
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function statusText(r) {
+    switch (r.state) {
+      case 'waiting': {
+        const ms = r.at - new Date(), s = Math.max(0, Math.round(ms / 1000));
+        const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+        const d = Math.floor(h / 24);
+        return 'in ' + (d ? d + 'd ' + (h % 24) + 'h ' : h ? h + 'h ' : '') + (m ? m + 'm ' : '') + (s % 60) + 's';
+      }
+      case 'due': return 'Due now';
+      case 'sent': return 'Sent ' + fmt(r.sentAt);
+      case 'past': return 'Time already passed, pick a later one';
+      case 'invalid': return 'Bad time in column D';
+      default: return 'Ready';
+    }
+  }
+  function render() {
+    $('tbl').hidden = !rows.length;
+    $('tbl').querySelector('tbody').innerHTML = rows.map((r, i) => `
+      <tr class="${r.state === 'due' ? 'due' : ''}">
+        <td>${i + 1}</td>
+        <td>${esc(r.name)}</td>
+        <td>+${esc(intl(r.mobile))}</td>
+        <td class="msg">${esc(r.message)}</td>
+        <td><input type="time" step="1" data-time="${i}" value="${timeValue(r.time)}" ${r.state === 'sent' ? 'disabled' : ''}>
+          <div class="when">${sendAt(r) ? sendAt(r).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</div></td>
+        <td class="status ${r.state}">${statusText(r)}</td>
+        <td><div class="row-btns">
+          <button data-send="${i}" ${r.state === 'due' ? '' : 'class="ghost"'}>${r.state === 'sent' ? 'Send again' : 'Send'}</button>
+        </div></td>
+      </tr>`).join('');
+  }
+  // Refresh only the countdowns so buttons aren't rebuilt under the user's click.
+  function updateStatuses() {
+    $('tbl').querySelectorAll('td.status').forEach((td, i) => { td.textContent = statusText(rows[i]); });
+  }
+  $('tbl').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-send]');
+    if (b) send(+b.dataset.send);
+  });
+  $('cc').addEventListener('input', render);
+  $('tbl').addEventListener('change', (e) => {
+    const t = e.target.closest('[data-time]');
+    if (!t) return;
+    const r = rows[+t.dataset.time];
+    r.time = parseTime(t.value);
+    if (r.state === 'due') r.state = 'loaded';
+    reschedule();
+  });
+})();
+</script>
+</body>
+</html>

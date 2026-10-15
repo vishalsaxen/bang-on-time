@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bang On Time</title>
+<script src="/vendor/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #667085;
+    --line: #e3e6ec; --accent: #128c7e; --accent-ink: #ffffff;
+    --warn: #b54708; --ok: #067647; --bad: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e8eaf0; --muted: #98a2b3;
+      --line: #2c3340; --accent: #25d366; --accent-ink: #0b1a12;
+      --warn: #fdb022; --ok: #47cd89; --bad: #f97066;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  .step { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+          color: var(--accent-ink); text-align: center; font-size: 13px; line-height: 22px; margin-right: 6px; }
+  input[type=file] { width: 100%; }
+  input[type=text] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--bg); color: var(--text); font: inherit; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  #imgPreview { margin-top: 10px; max-width: 100%; max-height: 160px; border-radius: 8px; display: none; }
+  #qr { display: none; width: 200px; max-width: 100%; margin-top: 8px; background: #fff; padding: 6px; border-radius: 8px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer;
+           background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .warn { color: var(--warn); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .table-wrap { overflow-x: auto; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  td.msg { min-width: 220px; }
+  .status { font-size: 13px; white-space: nowrap; }
+  .status.sent { color: var(--ok); }
+  .status.past, .status.missed, .status.invalid { color: var(--warn); }
+  .status.failed { color: var(--bad); white-space: normal; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .cal-head b { font-size: 15px; }
+  .cal-head button { padding: 4px 10px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-grid .dow { font-size: 11px; color: var(--muted); padding: 2px 0; }
+  .cal-grid button { padding: 7px 0; font-weight: 500; background: transparent; color: var(--text);
+          border: 1px solid transparent; }
+  .cal-grid button:hover:not(:disabled) { border-color: var(--line); }
+  .cal-grid button.today { border-color: var(--accent); }
+  .cal-grid button.sel { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+  input[type=time] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--bg); color: var(--text); font: inherit; font-size: 14px; }
+  .when { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
+  #clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bang On Time</h1>
+  <p class="sub">Each message is sent automatically from your WhatsApp at its date and time. Now: <span id="clock"></span></p>
+
+  <div class="grid">
+    <section class="card">
+      <h2><span class="step">1</span>Your WhatsApp</h2>
+      <div id="waStatus" class="note">Connecting…</div>
+      <img id="qr" alt="WhatsApp QR code">
+      <p class="note" id="waHelp"></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2</span>Image</h2>
+      <input type="file" id="imgFile" accept="image/*">
+      <img id="imgPreview" alt="Selected image">
+      <p class="note">Sent with every message; the message becomes its caption.</p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3</span>Excel list</h2>
+      <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
+      <p class="note">Columns: A Name, B Mobile, C Message, D Time, E Sender's mobile.</p>
+      <label for="sender">Sending from (column E)</label>
+      <input type="text" id="sender" readonly placeholder="Filled from the Excel">
+      <label for="cc">Country code for 10-digit numbers</label>
+      <input type="text" id="cc" value="91">
+      <p class="note warn" id="xlsError"></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">4</span>Send date</h2>
+      <div id="cal"></div>
+      <p class="note">Picked: <b id="pickedDate"></b>. Each message goes on this date at the exact time in its row.</p>
+    </section>
+  </div>
+
+  <div class="actions">
+    <button id="startBtn" disabled>Schedule messages</button>
+    <button id="cancelBtn" class="ghost">Cancel unsent</button>
+    <button id="clearBtn" class="ghost">Clear all entries</button>
+    <span class="note" id="runNote">Load an Excel file to begin.</span>
+  </div>
+  <p class="note">This app must stay running on your computer, with the computer awake, until the last message goes. You can close this browser tab.</p>
+
+  <div class="table-wrap">
+    <table id="tbl" hidden>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Message</th><th>Send at</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let rows = [];      // draft rows from the Excel: {name, mobile, message, time:{h,m,s}, sender}
+  let jobs = [];      // what the app has scheduled, from /api/status
+  let imageFile = null;
+  let wa = {};
+  let dryRun = false;
+
+  const fmt = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const fmtDate = (d) => d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+  setInterval(() => { $('clock').textContent = fmt(new Date()); updateCountdowns(); }, 1000);
+  $('clock').textContent = fmt(new Date());
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const pad = (n) => String(n).padStart(2, '0');
+  const timeValue = (t) => t ? pad(t.h) + ':' + pad(t.m) + ':' + pad(t.s) : '';
+  const intl = (num) => num.length === 10 ? $('cc').value.replace(/\D/g, '') + num : num;
+
+  // ---------- image ----------
+  $('imgFile').addEventListener('change', (e) => {
+    imageFile = e.target.files[0] || null;
+    const img = $('imgPreview');
+    if (imageFile) { img.src = URL.createObjectURL(imageFile); img.style.display = 'block'; }
+    else { img.style.display = 'none'; }
+  });
+
+  // ---------- excel ----------
+  $('xlsFile').addEventListener('change', async (e) => {
+    $('xlsError').textContent = '';
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      rows = data.slice(1)
+        .filter(r => String(r[1]).trim() !== '')
+        .map(r => ({
+          name: String(r[0]).trim(),
+          mobile: String(r[1]).replace(/\D/g, ''),
+          message: String(r[2]),
+          time: parseTime(r[3]),
+          sender: String(r[4]).replace(/\D/g, ''),
+        }));
+      if (!rows.length) throw new Error('No rows with a mobile number in column B.');
+      const senders = [...new Set(rows.map(r => r.sender).filter(Boolean))];
+      $('sender').value = senders.join(', ') || '(column E is empty)';
+      checkSender();
+      render();
+      $('runNote').textContent = rows.length + ' messages loaded. Check the times, then press Schedule.';
+    } catch (err) {
+      $('xlsError').textContent = 'Could not read that file: ' + err.message;
+    }
+    updateStartBtn();
+  });
+
+  // Accepts an Excel time fraction (0.5 = 12:00), a full date serial, "14:30", "2:30 PM", or a Date.
+  function parseTime(v) {
+    if (v instanceof Date) return { h: v.getHours(), m: v.getMinutes(), s: v.getSeconds() };
+    if (typeof v === 'number') {
+      const secs = Math.round((v % 1) * 86400);
+      return { h: Math.floor(secs / 3600) % 24, m: Math.floor(secs / 60) % 60, s: secs % 60 };
+    }
+    const m = String(v).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?$/i);
+    if (!m) return null;
+    let h = +m[1];
+    if (m[4]) { const pm = /p/i.test(m[4]); if (h === 12) h = 0; if (pm) h += 12; }
+    return { h, m: +m[2], s: +(m[3] || 0) };
+  }
+
+  // ---------- calendar ----------
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  let sendDate = startOfDay(new Date());
+  let calMonth = new Date(sendDate.getFullYear(), sendDate.getMonth(), 1);
+  function drawCalendar() {
+    const today = startOfDay(new Date());
+    const first = calMonth.getDay();
+    const days = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+    const prevOk = calMonth > new Date(today.getFullYear(), today.getMonth(), 1);
+    let html = `<div class="cal-head">
+        <button class="ghost" data-nav="-1" ${prevOk ? '' : 'disabled'} aria-label="Previous month">&lsaquo;</button>
+        <b>${calMonth.toLocaleDateString([], { month: 'long', year: 'numeric' })}</b>
+        <button class="ghost" data-nav="1" aria-label="Next month">&rsaquo;</button></div><div class="cal-grid">`;
+    html += ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => `<div class="dow">${d}</div>`).join('');
+    html += '<div></div>'.repeat(first);
+    for (let d = 1; d <= days; d++) {
+      const day = new Date(calMonth.getFullYear(), calMonth.getMonth(), d);
+      const cls = [+day === +today ? 'today' : '', +day === +sendDate ? 'sel' : ''].join(' ');
+      html += `<button class="${cls}" data-day="${d}" ${day < today ? 'disabled' : ''}>${d}</button>`;
+    }
+    $('cal').innerHTML = html + '</div>';
+    $('pickedDate').textContent = sendDate.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  $('cal').addEventListener('click', (e) => {
+    const nav = e.target.closest('[data-nav]'), day = e.target.closest('[data-day]');
+    if (nav) calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + +nav.dataset.nav, 1);
+    if (day) { sendDate = new Date(calMonth.getFullYear(), calMonth.getMonth(), +day.dataset.day); render(); }
+    drawCalendar();
+  });
+  drawCalendar();
+
+  function sendAt(r) {
+    if (!r.time) return null;
+    const at = new Date(sendDate); at.setHours(r.time.h, r.time.m, r.time.s, 0);
+    return at;
+  }
+
+  // ---------- talking to the app ----------
+  async function poll() {
+    try {
+      const s = await (await fetch('/api/status')).json();
+      wa = s.whatsapp; dryRun = s.dryRun; jobs = s.jobs;
+      showWhatsApp();
+      if (!rows.length) render();
+    } catch (_) {
+      $('waStatus').innerHTML = '<span class="bad">Can\'t reach the app. Is it still running?</span>';
+    }
+    updateStartBtn();
+  }
+  setInterval(poll, 2000);
+  poll();
+
+  function showWhatsApp() {
+    const qr = $('qr');
+    qr.style.display = wa.state === 'scan' ? 'block' : 'none';
+    if (wa.qr) qr.src = wa.qr;
+    $('waHelp').textContent = '';
+    if (wa.state === 'ready') {
+      $('waStatus').innerHTML = dryRun ? '<span class="warn">Dry run: messages are only logged, not sent.</span>'
+        : '<span class="ok">Linked as +' + esc(wa.me) + '</span>';
+    } else if (wa.state === 'scan') {
+      $('waStatus').textContent = 'Not linked yet.';
+      $('waHelp').textContent = 'On your phone open WhatsApp > Settings > Linked devices > Link a device, and scan this code.';
+    } else if (wa.state === 'error') {
+      $('waStatus').innerHTML = '<span class="bad">' + esc(wa.error || 'WhatsApp error') + '</span>';
+      $('waHelp').textContent = 'Restart the app to try again.';
+    } else {
+      $('waStatus').textContent = wa.error ? wa.error + '. Trying again automatically…' : 'Starting WhatsApp…';
+    }
+    checkSender();
+  }
+
+  function checkSender() {
+    const want = $('sender').value.replace(/\D/g, '');
+    if (!want || wa.state !== 'ready' || dryRun || !wa.me) return;
+    const linked = String(wa.me);
+    $('xlsError').textContent = linked.endsWith(want.slice(-10)) ? ''
+      : 'Column E says ' + want + ' but WhatsApp is linked as +' + linked + '. Messages will come from +' + linked + '.';
+  }
+
+  function updateStartBtn() { $('startBtn').disabled = !rows.length || wa.state !== 'ready'; }
+
+  $('startBtn').addEventListener('click', async () => {
+    const list = rows.filter(r => r.time).map(r => ({
+      name: r.name, mobile: intl(r.mobile), message: r.message, at: +sendAt(r),
+    }));
+    const fd = new FormData();
+    fd.append('jobs', JSON.stringify(list));
+    if (imageFile) fd.append('image', imageFile);
+    $('startBtn').disabled = true;
+    const res = await fetch('/api/schedule', { method: 'POST', body: fd });
+    const out = await res.json();
+    if (!res.ok) { $('runNote').textContent = out.error || 'Could not schedule.'; return; }
+    jobs = out.jobs; rows = [];
+    $('xlsFile').value = '';
+    const waiting = jobs.filter(j => j.status === 'waiting').length;
+    const past = jobs.filter(j => j.status === 'past').length;
+    $('runNote').textContent = waiting + ' scheduled.' + (past ? ' ' + past + ' had a time that already passed and will not be sent.' : '');
+    render();
+  });
+
+  $('clearBtn').addEventListener('click', async () => {
+    if (!confirm('Remove every entry, sent and unsent? Nothing scheduled will be sent.')) return;
+    await fetch('/api/clear', { method: 'POST' });
+    rows = []; jobs = [];
+    $('xlsFile').value = ''; $('sender').value = ''; $('xlsError').textContent = '';
+    $('runNote').textContent = 'All entries cleared. Load an Excel file to begin.';
+    render(); poll();
+  });
+  $('cancelBtn').addEventListener('click', async () => {
+    await fetch('/api/cancel', { method: 'POST' });
+    $('runNote').textContent = 'Unsent messages cancelled.';
+    poll();
+  });
+
+  // ---------- table ----------
+  function countdown(at) {
+    const s = Math.max(0, Math.round((at - Date.now()) / 1000));
+    const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60;
+    return 'Sends in ' + (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + (m ? m + 'm ' : '') + (s % 60) + 's';
+  }
+  function jobStatus(j) {
+    switch (j.status) {
+      case 'waiting': return countdown(j.at);
+      case 'sending': return 'Sending…';
+      case 'sent': return 'Sent ' + fmt(new Date(j.sentAt)) + (j.detail ? ' (text only, image failed)' : '');
+      case 'failed': return 'Failed: ' + (j.detail || 'unknown error');
+      case 'past': return 'Not sent: time had passed';
+      case 'missed': return 'Missed: app was off';
+      default: return j.status;
+    }
+  }
+
+  // Draft rows (editable times) until scheduled; afterwards the app's job list.
+  function render() {
+    const tbody = $('tbl').querySelector('tbody');
+    if (rows.length) {
+      $('tbl').hidden = false;
+      tbody.innerHTML = rows.map((r, i) => {
+        const at = sendAt(r);
+        const st = !at ? ['invalid', 'Bad time in column D'] : at <= new Date() ? ['past', 'Time already passed, pick a later one'] : ['', 'Not scheduled yet'];
+        return `<tr>
+          <td>${i + 1}</td><td>${esc(r.name)}</td><td>+${esc(intl(r.mobile))}</td>
+          <td class="msg">${esc(r.message)}</td>
+          <td><input type="time" step="1" data-time="${i}" value="${timeValue(r.time)}">
+            <div class="when">${at ? fmtDate(at) : ''}</div></td>
+          <td class="status ${st[0]}">${st[1]}</td></tr>`;
+      }).join('');
+    } else {
+      $('tbl').hidden = !jobs.length;
+      tbody.innerHTML = jobs.map((j, i) => `<tr>
+          <td>${i + 1}</td><td>${esc(j.name)}</td><td>+${esc(j.mobile)}</td>
+          <td class="msg">${esc(j.message)}</td>
+          <td>${fmt(new Date(j.at))}<div class="when">${fmtDate(new Date(j.at))}</div></td>
+          <td class="status ${j.status}" data-job="${i}">${esc(jobStatus(j))}</td></tr>`).join('');
+    }
+  }
+  function updateCountdowns() {
+    if (rows.length) return;
+    document.querySelectorAll('[data-job]').forEach(td => { td.textContent = jobStatus(jobs[+td.dataset.job]); });
+  }
+  $('tbl').addEventListener('change', (e) => {
+    const t = e.target.closest('[data-time]');
+    if (!t) return;
+    rows[+t.dataset.time].time = parseTime(t.value);
+    render();
+  });
+  $('cc').addEventListener('input', render);
+})();
+</script>
+</body>
+</html>
