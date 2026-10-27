@@ -37,6 +37,7 @@ jobs:
           WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           WHATSAPP_TEMPLATE: ${{ vars.WHATSAPP_TEMPLATE }}
           WHATSAPP_TEMPLATE_LANG: ${{ vars.WHATSAPP_TEMPLATE_LANG || 'en' }}
+          WHATSAPP_TEMPLATE_FIELDS: ${{ vars.WHATSAPP_TEMPLATE_FIELDS || 'name,message' }}
           SCHEDULE_CSV: ${{ secrets.SCHEDULE_CSV }}
         run: node cloud-sender/send.js
 
