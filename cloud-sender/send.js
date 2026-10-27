@@ -23,6 +23,8 @@ const TOKEN = env('WHATSAPP_TOKEN');
 const PHONE_ID = env('WHATSAPP_PHONE_NUMBER_ID');
 const TEMPLATE = env('WHATSAPP_TEMPLATE');            // optional: approved template name
 const TEMPLATE_LANG = env('WHATSAPP_TEMPLATE_LANG', 'en');
+// Which row fields fill the template's {{1}}, {{2}}, ... in order (name and/or message).
+const TEMPLATE_FIELDS = env('WHATSAPP_TEMPLATE_FIELDS', 'name,message').split(',').map((f) => f.trim()).filter(Boolean);
 const COUNTRY_CODE = env('COUNTRY_CODE', '91');
 // GitHub's scheduled runs can start several minutes late, so anything due within this
 // many minutes is still sent. Older unsent rows are logged as missed instead of sent late.
@@ -116,20 +118,29 @@ async function imageId() {
   return (mediaId = (await api('media', form)).id);
 }
 
-// With WHATSAPP_TEMPLATE set, sends that approved template with the row's message as its
-// {{1}} body text and the image as its header; this works for anyone, any time.
+// With WHATSAPP_TEMPLATE set, sends that approved template with the row's fields as its
+// body values (by default {{1}} = name, {{2}} = message) and the image as its header;
+// this reaches anyone who agreed to hear from you, saved in their phone or not.
 // Without it, sends a plain image+caption or text, which WhatsApp only delivers to people
 // who messaged your business number in the last 24 hours.
 async function send(job) {
   const img = await imageId();
   const base = { messaging_product: 'whatsapp', to: job.mobile };
   if (TEMPLATE) {
-    const components = [{ type: 'body', parameters: [{ type: 'text', text: job.message }] }];
+    const components = [{ type: 'body', parameters: TEMPLATE_FIELDS.map((f) => ({ type: 'text', text: templateText(job, f) })) }];
     if (img) components.unshift({ type: 'header', parameters: [{ type: 'image', image: { id: img } }] });
     return api('messages', { ...base, type: 'template', template: { name: TEMPLATE, language: { code: TEMPLATE_LANG }, components } });
   }
   if (img) return api('messages', { ...base, type: 'image', image: { id: img, caption: job.message } });
   return api('messages', { ...base, type: 'text', text: { body: job.message } });
+}
+
+// WhatsApp refuses template values that are empty or contain line breaks, tabs or
+// more than four spaces in a row, so those are tidied up here.
+function templateText(job, field) {
+  const v = String(job[field] || '')
+    .replace(/\s*[\r\n\t]+\s*/g, ' ').replace(/ {4,}/g, '   ').trim();
+  return v || (field === 'name' ? 'there' : '-');
 }
 
 // ---------- run ----------
