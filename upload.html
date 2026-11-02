@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bang On Time Upload</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/libsodium@0.7.15/dist/modules/libsodium.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.15/dist/modules/libsodium-wrappers.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #667085;
+    --line: #e3e6ec; --accent: #128c7e; --accent-ink: #ffffff;
+    --warn: #b54708; --ok: #067647; --bad: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e8eaf0; --muted: #98a2b3;
+      --line: #2c3340; --accent: #25d366; --accent-ink: #0b1a12;
+      --warn: #fdb022; --ok: #47cd89; --bad: #f97066;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  .step { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+          color: var(--accent-ink); text-align: center; font-size: 13px; line-height: 22px; margin-right: 6px; }
+  input[type=file] { width: 100%; }
+  input[type=password], input[type=date] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--bg); color: var(--text); font: inherit; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  #imgPreview { margin-top: 10px; max-width: 100%; max-height: 160px; border-radius: 8px; display: none; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer;
+           background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+  .note { font-size: 13px; color: var(--muted); }
+  .warn { color: var(--warn); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  a { color: var(--accent); }
+  .table-wrap { overflow-x: auto; margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  td.msg { min-width: 220px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bang On Time: send from the cloud</h1>
+  <p class="sub">Upload your Excel list and image once. GitHub sends each message at its time through the WhatsApp Business API, so your computer and phone can be off.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2><span class="step">1</span>Connect GitHub</h2>
+      <label for="token">GitHub access token</label>
+      <input type="password" id="token" autocomplete="off" placeholder="github_pat_…">
+      <div class="actions"><button id="checkBtn" class="ghost">Check</button><span class="note" id="tokenNote"></span></div>
+      <p class="note">Kept only in this browser. <a href="#token-help">How to get one</a></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2</span>Image</h2>
+      <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp">
+      <img id="imgPreview" alt="Selected image">
+      <p class="note">Sent at the top of every message. Leave empty to keep the image already uploaded.</p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3</span>Excel list</h2>
+      <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv">
+      <p class="note">Columns: A Name, B Mobile, C Message, D Time, E Sender (ignored), F Date (optional).</p>
+      <p class="note bad" id="xlsError"></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">4</span>Send date</h2>
+      <label for="date">For rows without a date in column F</label>
+      <input type="date" id="date">
+      <p class="note">Times are India time (IST).</p>
+    </section>
+  </div>
+
+  <div class="actions">
+    <button id="uploadBtn" disabled>Upload schedule</button>
+    <span class="note" id="runNote">Connect GitHub and load an Excel file to begin.</span>
+  </div>
+
+  <div class="table-wrap">
+    <table id="tbl" hidden>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Message</th><th>Send at</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <section class="card" id="token-help" style="margin-top:24px">
+    <h2>Getting a GitHub access token (once)</h2>
+    <ol class="note">
+      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub > New fine-grained token</a>.</li>
+      <li>Name it <b>Bang On Time upload</b> and pick an expiry.</li>
+      <li>Repository access: <b>Only select repositories</b> > <b>bang-on-time</b>.</li>
+      <li>Repository permissions: <b>Contents</b> = Read and write, <b>Secrets</b> = Read and write.</li>
+      <li>Generate it, copy it, paste it in step 1 above and press Check.</li>
+    </ol>
+    <p class="note">Your list is saved as a private repository secret, so phone numbers never appear in the public repo. The image is saved in the repo as <code>cloud-sender/image.jpg</code>. Each upload replaces the previous list. A row that was already sent is not sent again if you upload it again.</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  const OWNER = 'vishalsaxen', REPO = 'bang-on-time';
+  const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+  const SECRET_LIMIT = 48 * 1024;
+  const $ = (id) => document.getElementById(id);
+  let rows = [];
+  let imageBlob = null;
+  let tokenOk = false;
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
+
+  // ---------- GitHub ----------
+  async function gh(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: { Authorization: 'Bearer ' + $('token').value.trim(), Accept: 'application/vnd.github+json',
+                 'X-GitHub-Api-Version': '2022-11-28', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    });
+    if (res.status === 404 && opts.allow404) return null;
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(res.status === 401 ? 'The token is wrong or expired.'
+        : res.status === 403 || res.status === 404 ? 'The token can\'t reach bang-on-time. Check its repository and permissions.'
+        : j.message || 'GitHub error ' + res.status);
+    }
+    return res.status === 204 ? {} : res.json().catch(() => ({}));
+  }
+
+  $('token').value = store.get('bot-token') || '';
+  $('checkBtn').addEventListener('click', checkToken);
+  if ($('token').value) checkToken();
+
+  async function checkToken() {
+    tokenOk = false;
+    $('tokenNote').className = 'note';
+    $('tokenNote').textContent = 'Checking…';
+    try {
+      const repo = await gh('');
+      if (!repo.permissions || !repo.permissions.push) throw new Error('This token can only read the repo. Give Contents: Read and write.');
+      await gh('/actions/secrets/public-key');
+      store.set('bot-token', $('token').value.trim());
+      tokenOk = true;
+      $('tokenNote').className = 'note ok';
+      $('tokenNote').textContent = 'Connected';
+    } catch (e) {
+      $('tokenNote').className = 'note bad';
+      $('tokenNote').textContent = e.message;
+    }
+    updateBtn();
+  }
+
+  // ---------- image ----------
+  // Converted to a JPEG of at most 1600px so it is small and always named image.jpg.
+  $('imgFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    imageBlob = null;
+    $('imgPreview').style.display = 'none';
+    if (!f) return updateBtn();
+    const img = await createImageBitmap(f);
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    imageBlob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+    $('imgPreview').src = URL.createObjectURL(imageBlob);
+    $('imgPreview').style.display = 'block';
+    updateBtn();
+  });
+
+  // ---------- excel ----------
+  const pad = (n) => String(n).padStart(2, '0');
+  const today = new Date();
+  $('date').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  $('date').addEventListener('change', render);
+
+  // Accepts an Excel time fraction (0.5 = 12:00), a full date serial, "14:30", "2:30 PM", or a Date.
+  function parseTime(v) {
+    if (v instanceof Date) return { h: v.getHours(), m: v.getMinutes(), s: v.getSeconds() };
+    if (typeof v === 'number') {
+      const secs = Math.round((v % 1) * 86400);
+      return { h: Math.floor(secs / 3600) % 24, m: Math.floor(secs / 60) % 60, s: secs % 60 };
+    }
+    const m = String(v).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?$/i);
+    if (!m) return null;
+    let h = +m[1];
+    if (m[4]) { const pm = /p/i.test(m[4]); if (h === 12) h = 0; if (pm) h += 12; }
+    return { h, m: +m[2], s: +(m[3] || 0) };
+  }
+
+  // Accepts an Excel date serial, a Date, "2026-11-05" or "05/11/2026" (day first). Returns "YYYY-MM-DD" or ''.
+  function parseDate(v) {
+    if (v === '' || v == null) return '';
+    if (v instanceof Date) return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}`;
+    if (typeof v === 'number' && v >= 1) {
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    }
+    let m = String(v).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+    m = String(v).trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+    return null;
+  }
+
+  $('xlsFile').addEventListener('change', async (e) => {
+    $('xlsError').textContent = '';
+    rows = [];
+    const f = e.target.files[0];
+    if (f) {
+      try {
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+        rows = data.slice(1).filter((r) => String(r[1]).trim() !== '').map((r) => ({
+          name: String(r[0]).trim(),
+          mobile: String(r[1]).replace(/\D/g, ''),
+          message: String(r[2]),
+          time: parseTime(r[3]),
+          date: parseDate(r[5]),
+        }));
+        if (!rows.length) throw new Error('No rows with a mobile number in column B.');
+      } catch (err) {
+        rows = [];
+        $('xlsError').textContent = 'Could not read that file: ' + err.message;
+      }
+    }
+    render();
+  });
+
+  const sendDate = (r) => r.date || $('date').value;
+  const problem = (r) => !r.mobile || r.mobile.length < 10 ? 'Mobile number looks wrong'
+    : !r.message.trim() ? 'No message in column C'
+    : !r.time ? 'Time in column D not understood'
+    : r.date === null ? 'Date in column F not understood'
+    : !sendDate(r) ? 'Pick a send date'
+    : new Date(`${sendDate(r)}T${pad(r.time.h)}:${pad(r.time.m)}:00`) < new Date() ? 'This time has already passed'
+    : '';
+  const mask = (n) => n.length > 4 ? n.slice(0, 2) + '•'.repeat(n.length - 4) + n.slice(-2) : n;
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function render() {
+    const tb = $('tbl').querySelector('tbody');
+    $('tbl').hidden = !rows.length;
+    tb.innerHTML = rows.map((r, i) => {
+      const p = problem(r);
+      const when = r.time && sendDate(r) ? `${sendDate(r)} ${pad(r.time.h)}:${pad(r.time.m)}` : '';
+      return `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>+${esc(mask(r.mobile))}</td>
+        <td class="msg">${esc(r.message)}</td><td>${esc(when)}${p ? `<div class="note warn">${esc(p)}</div>` : ''}</td></tr>`;
+    }).join('');
+    updateBtn();
+  }
+
+  function updateBtn() {
+    const good = rows.filter((r) => !problem(r)).length;
+    $('uploadBtn').disabled = !tokenOk || !good;
+    if (!rows.length) return;
+    const bad = rows.length - good;
+    $('runNote').className = 'note';
+    $('runNote').textContent = `${good} message${good === 1 ? '' : 's'} ready` + (bad ? `, ${bad} skipped (see the table)` : '') +
+      (tokenOk ? '.' : '. Connect GitHub to upload.');
+  }
+
+  // ---------- upload ----------
+  const csvCell = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  function buildCsv() {
+    const lines = [['name', 'mobile', 'message', 'time', 'sender', 'date'].join(',')];
+    for (const r of rows.filter((x) => !problem(x))) {
+      lines.push([r.name, r.mobile, r.message, `${pad(r.time.h)}:${pad(r.time.m)}:${pad(r.time.s)}`, '', sendDate(r)].map(csvCell).join(','));
+    }
+    return lines.join('\n') + '\n';
+  }
+
+  async function saveSecret(name, value) {
+    await sodium.ready;
+    const key = await gh('/actions/secrets/public-key');
+    const sealed = sodium.crypto_box_seal(sodium.from_string(value), sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL));
+    await gh('/actions/secrets/' + name, { method: 'PUT', body: JSON.stringify({
+      encrypted_value: sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL), key_id: key.key_id }) });
+  }
+
+  async function saveImage(blob) {
+    const path = '/contents/cloud-sender/image.jpg';
+    const existing = await gh(path, { allow404: true });
+    const b64 = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
+    await gh(path, { method: 'PUT', body: JSON.stringify({
+      message: 'Update the image sent with each message', content: b64, ...(existing ? { sha: existing.sha } : {}) }) });
+  }
+
+  $('uploadBtn').addEventListener('click', async () => {
+    const csv = buildCsv();
+    if (new Blob([csv]).size > SECRET_LIMIT) {
+      $('runNote').className = 'note bad';
+      $('runNote').textContent = 'The list is too long for one upload (GitHub allows 48 KB). Split it into smaller files.';
+      return;
+    }
+    $('uploadBtn').disabled = true;
+    $('runNote').className = 'note';
+    try {
+      if (imageBlob) { $('runNote').textContent = 'Uploading the image…'; await saveImage(imageBlob); }
+      $('runNote').textContent = 'Uploading the list…';
+      await saveSecret('SCHEDULE_CSV', csv);
+      const n = rows.filter((r) => !problem(r)).length;
+      $('runNote').className = 'note ok';
+      $('runNote').innerHTML = `Done. ${n} message${n === 1 ? '' : 's'} scheduled; each goes out within a few minutes of its time. ` +
+        `Check progress on <a href="https://github.com/${OWNER}/${REPO}/actions" target="_blank" rel="noopener">GitHub Actions</a>.`;
+    } catch (e) {
+      $('runNote').className = 'note bad';
+      $('runNote').textContent = 'Upload failed: ' + e.message;
+    }
+    $('uploadBtn').disabled = false;
+  });
+})();
+</script>
+</body>
+</html>
