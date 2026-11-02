@@ -55,7 +55,10 @@ Numbers do not need to be saved in anyone's phone. People should have agreed to 
      name and `{{2}}` with the message. Use `message` for a body with just `{{1}}`.
    - optional: `TIMEZONE` (default `Asia/Kolkata`), `COUNTRY_CODE` (default `91`), `LATE_LIMIT_MINUTES` (default `30`),
      `DRY_RUN` = `true` to pause real sending
-7. **Image**: commit it as `cloud-sender/image.jpg` (or `.png`). It goes in the header of every message.
+7. **List and image**: open the upload page, https://vishalsaxen.github.io/bang-on-time/upload.html
+   (GitHub Pages on, from `main`, `/ (root)`), connect a GitHub token as the page explains, pick the Excel
+   and the image, and press **Upload schedule**. It saves the list as the `SCHEDULE_CSV` secret and the image as
+   `cloud-sender/image.jpg`. Each upload replaces the previous list.
 8. **Test**: put one row with your own number a few minutes ahead, then Actions tab >
    **Send scheduled WhatsApp messages > Run workflow**. The run's log says Sent or why it failed.
 
